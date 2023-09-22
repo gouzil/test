@@ -1,0 +1,14 @@
+__pycache__
+*.sw*
+user_tag
+
+# Editor config
+.vscode
+
+# Environments
+venv/
+.venv/
+
+# Build
+build/
+*.egg-info

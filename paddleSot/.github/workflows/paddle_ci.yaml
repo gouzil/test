@@ -1,0 +1,67 @@
+name: PaddleDy2staicTests
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  Test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+    runs-on: ${{ matrix.os }}
+    name: python ${{ matrix.python-version }} dy2st unittests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # RAM too small, Related link: https://github.com/actions/runner-images/discussions/7188
+      - name: Increase swapfile
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 15G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
+
+      - name: Install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install paddlepaddle==0.0.0 -f https://www.paddlepaddle.org.cn/whl/linux/cpu-mkl/develop.html
+          pip install ".[paddle-test]"
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/paddle
+          key: ${{ runner.os }}-${{ matrix.python-version }}-paddle-cache-v1
+
+      - name: Paddle run check
+        run: |
+          python -c "import paddle; paddle.utils.run_check()"
+
+      - name: Clone paddle tests
+        working-directory: ./tests/
+        run: |
+          git clone https://github.com/PaddlePaddle/Paddle
+          cd Paddle
+          PADDLE_COMMIT_HASH=`python -c "import paddle; import sys; sys.stdout.write(paddle.version.commit)"`
+          echo -e "paddle commit hash: \x1b[32m${PADDLE_COMMIT_HASH}\x1b[0m"
+          git checkout ${PADDLE_COMMIT_HASH}
+          # skip new ir tests
+          sed -i "s/@test_with_new_ir/@unittest.skip('skip new ir test')/g" `grep -rl "@test_with_new_ir" test/dygraph_to_static`
+          sed -i "s/@test_and_compare_with_new_ir/# @test_and_compare_with_new_ir/g" `grep -rl "@test_and_compare_with_new_ir" test/dygraph_to_static`
+
+      - name: Run unit tests
+        working-directory: ./tests/
+        run: |
+          bash ./run_all_paddle_ci.sh
